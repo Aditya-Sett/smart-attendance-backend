@@ -187,20 +187,32 @@ exports.getSubjectSummary=async (req, res) => {
     const codeList = allCodes.map(c => c.code);
     const totalClasses = codeList.length;
 
+    // Step 2: Get all students in the department (teacher wants to see everyone, even zero attendance)
+    const allStudents = await Student.find({ department });
+
+    // If no classes have been held yet, return all students with zero values
     if (totalClasses === 0) {
-      return res.status(200).json({ success: true, summary: [], totalClasses: 0 });
+      const summary = allStudents.map(student => ({
+        studentId: student.studentid,
+        name: student.name,
+        department: student.department,
+        present: 0,
+        total: 0,
+        percentage: 0,
+        status: "Below 75%"
+      }));
+      return res.status(200).json({ success: true, summary, totalClasses: 0 });
     }
 
-    // Step 2: Get all attendance records for these codes
+    // Step 3: Get all attendance records for these codes
     const attendanceRecords = await AttendanceRecord.find({
       department,
       subject,
       code: { $in: codeList }
     });
 
-    // Step 3: Count attendance per student
+    // Step 4: Count attendance per student
     const attendanceMap = {}; // { studentId: { present: X } }
-
     attendanceRecords.forEach(record => {
       const id = record.studentId;
       if (!attendanceMap[id]) {
@@ -209,14 +221,10 @@ exports.getSubjectSummary=async (req, res) => {
       attendanceMap[id].present += 1;
     });
 
-    // Step 4: Get student names and build final summary
-    const studentIds = Object.keys(attendanceMap);
-    const students = await Student.find({ studentid: { $in: studentIds } });
-
-    const summary = students.map(student => {
+    // Step 5: Build final summary for all students, including those with zero attendance
+    const summary = allStudents.map(student => {
       const attended = attendanceMap[student.studentid]?.present || 0;
       const percentage = Math.round((attended / totalClasses) * 100);
-
       return {
         studentId: student.studentid,
         name: student.name,
@@ -228,7 +236,7 @@ exports.getSubjectSummary=async (req, res) => {
       };
     });
 
-    return res.status(200).json({ success: true, summary });
+    return res.status(200).json({ success: true, summary, totalClasses });
 
   } catch (err) {
     console.error("❌ Error fetching student summary:", err);
