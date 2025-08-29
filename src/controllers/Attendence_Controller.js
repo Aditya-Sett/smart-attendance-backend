@@ -245,66 +245,53 @@ exports.getSubjectSummary=async (req, res) => {
 };
 
 exports.approveLeave=async (req, res) => {
+  const { department, students, fromDate, toDate, reason } = req.body;
+
+  if (!department || !students || !fromDate || !toDate) {
+    return res.status(400).json({ success: false, message: "Missing required fields" });
+  }
+
   try {
-    const { department, subject } = req.params;
-
-    // Validate input
-    if (!department || !subject) {
-      return res.status(400).json({ success: false, message: "Department and subject are required" });
-    }
-
-    // Get total classes held for this department + subject
-    const totalClassesHeld = await AttendanceCode.countDocuments({ department, subject });
-
-    // Get all students in this department
-    const students = await Student.find({ department });
-    if (!students || students.length === 0) {
-      return res.json({ success: true, summary: [], message: "No students found for this department" });
-    }
-
-    const summary = await Promise.all(students.map(async (student) => {
-      // Get attended classes count
-      const attendedClasses = await AttendanceRecord.countDocuments({
-        studentId: student.studentid.toString(),
-        department,
-        subject
-      });
-
-      // Get excused classes for this student
-      const leaveAdjustments = await LeaveAdjustment.find({
-        studentId: student._id.toString(),
-        department
-      });
-
-      let excusedCount = 0;
-      for (const leave of leaveAdjustments) {
-        excusedCount += leave.excusedClasses.filter(e => e.subject.trim() === subject.trim()).length;
+    // 1. Get all classes held in that range for this department
+    const classesHeld = await AttendanceCode.find({
+      department,
+      generatedAt: {
+        $gte: new Date(fromDate),
+        $lte: new Date(toDate)
       }
+    });
 
-      // Adjust total classes held for this student
-      const adjustedTotal = Math.max(totalClassesHeld - excusedCount, 0);
-      //const adjustedTotal = attendedClasses + excusedCount;
-      const percentage = adjustedTotal > 0
-        ? (attendedClasses / adjustedTotal) * 100
-        : 100;
+    if (classesHeld.length === 0) {
+      return res.status(404).json({ success: false, message: "No classes found in that range" });
+    }
 
-      return {
-        studentId: student.studentid,
-        name: student.name,
-        department: student.department,
-        present: attendedClasses,
-        excused: excusedCount,
-        total: totalClassesHeld,
-        consideredTotal: adjustedTotal,
-        percentage: Number(percentage.toFixed(2)),
-        status: percentage >= 75 ? "Above 75%" : "Below 75%"
-      };
+    // 2. Prepare excused classes
+    const excusedList = classesHeld.map(c => ({
+      subject: c.subject,
+      date: c.generatedAt
     }));
 
-    res.json({ success: true, summary});
+    // 3. Save leave adjustment for each student
+    for (const studentId of students) {
+      const leave = new LeaveAdjustment({
+        studentId,
+        department,
+        fromDate,
+        toDate,
+        reason,
+        excusedClasses: excusedList
+      });
+      await leave.save();
+    }
+
+    res.status(201).json({
+      success: true,
+      message: "Leave approved successfully",
+      excusedCount: excusedList.length
+    });
 
   } catch (err) {
-    console.error("Error fetching attendance summary:", err);
+    console.error("❌ Error approving leave:", err);
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
