@@ -10,7 +10,7 @@ const {
 } = require('../controllers/Attendence_Controller');
 
 router.post('/generate', generateCode);
-router.get('/latest/:department', getLatestCode);
+router.post('/latest', getLatestCode);
 router.post('/submit', submitAttendance);
 router.get('/summary/:studentId/:department', getStudentSummary);
 router.get('/students/:department/:subject', getSubjectSummary);
