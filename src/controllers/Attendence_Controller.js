@@ -4,18 +4,19 @@ const AttendanceCode=require('../models/AttendanceCode_Model');
 const AttendanceRecord=require('../models/AttendanceRecord_Model');
 const Student = require('../models/Student_Model');
 const LeaveAdjustment = require('../models/LeaveAdjustment_Model');
+const getDistanceFromLatLonInM = require('../utils/distance');
 
 exports.generateCode= async (req, res) => {
-  const { teacherId, department, subject } = req.body;
+  const { teacherId, department, subject, latitude, longitude } = req.body;
 
-  if (!teacherId || !department || !subject) {
+  if (!teacherId || !department || !subject || !latitude || !longitude) {
     return res.status(400).json({ success: false, message: "Missing required fields" });
   }
 
   // Generate random 4-digit code
   const code = Math.floor(1000 + Math.random() * 9000).toString();
   const generatedAt = new Date();
-  const expiresAt = new Date(generatedAt.getTime() + 5 * 60 * 1000); // 30 minutes validity
+  const expiresAt = new Date(generatedAt.getTime() + 1 * 60 * 1000); // 1 minutes validity
   const formattedExpiresAt = `${dayjs(expiresAt).format('DD-MM-YYYY')}T${dayjs(expiresAt).format('hh:mm:ss A')}`;
 
   const newCode = new AttendanceCode({
@@ -23,9 +24,10 @@ exports.generateCode= async (req, res) => {
     department,
     subject,
     teacherId,
+    latitude,
+    longitude,
     generatedAt,
     expiresAt
-    //formattedExpiresAt
   });
 
   try {
@@ -47,7 +49,11 @@ exports.generateCode= async (req, res) => {
 
 
 exports.getLatestCode=async (req, res) => {
-  const { department } = req.params;
+  const { department, studentLat, studentLon } = req.body;
+
+  if (!department || !studentLat || !studentLon) {
+    return res.status(400).json({ success: false, message: "Missing fields" });
+  }
 
   try {
     const now = new Date();
@@ -62,17 +68,29 @@ exports.getLatestCode=async (req, res) => {
       console.log("⚠️ No active code found for:", department);
       return res.status(404).json({ success: false, message: "No active code found" });
     }
-    else{
-      console.log("✅ Found code:", latestCode.code, "Expires at:", latestCode.expiresAt);
-    } 
-    const isActive = latestCode.expiresAt > new Date();
+
+    // Check distance
+    const distance = getDistanceFromLatLonInM(
+      studentLat,
+      studentLon,
+      latestCode.latitude,
+      latestCode.longitude
+    );
+
+    if (distance > 30) {
+      console.log("🚫 Student not in range. Distance:", distance.toFixed(2), "m");
+      return res.status(403).json({ success: false, message: "You are not in classroom range" });
+    }
+
+    console.log("✅ Found active code:", latestCode.code, "Expires at:", latestCode.expiresAt);
 
     return res.status(200).json({
       success: true,
-      code: latestCode.code,
+      message: "Code available",
       subject: latestCode.subject,
       expiresAt: latestCode.expiresAt,
-      active: isActive
+      code: latestCode.code,
+      active: true
     });
 
   } catch (err) {
@@ -82,9 +100,9 @@ exports.getLatestCode=async (req, res) => {
 };
 
  exports.submitAttendance=async (req, res) => {
-  const { studentId, department, code } = req.body;
+  const { studentId, department, code, studentLat, studentLon } = req.body;
 
-  if (!studentId || !department || !code) {
+  if (!studentId || !department || !code || !studentLat || !studentLon) {
     return res.status(400).json({ success: false, message: "Missing fields" });
   }
 
@@ -100,17 +118,34 @@ exports.getLatestCode=async (req, res) => {
     if (!activeCode) {
       return res.status(400).json({ success: false, message: "Invalid or expired code" });
     }
+
+    // ✅ Distance check
+    const distance = getDistanceFromLatLonInM(
+      studentLat,
+      studentLon,
+      activeCode.latitude,
+      activeCode.longitude
+    );
+
+    if (distance > 30) {
+      console.log("🚫 Student not in range during submit. Distance:", distance.toFixed(2), "m");
+      return res.status(403).json({ success: false, message: "You are not in classroom range" });
+    }
+
     console.log("📥 Attendance Submission Request:");
-    console.log({ studentId, department, code });
+    console.log({ studentId, department, code, studentLat, studentLon });
     console.log("✅ Active code found:", activeCode);
 
+    // ✅ Save student location too
     const newAttendance = new AttendanceRecord({
       studentId,
       department,
       subject: activeCode.subject,
       teacherId: activeCode.teacherId,
       code: activeCode.code,
-      timestamp: new Date()
+      timestamp: new Date(),
+      studentLat,
+      studentLon
     });
 
     await newAttendance.save();
