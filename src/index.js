@@ -10,6 +10,7 @@ const connectDB=require('./config/DbConnection');  //MongoDb connection
 const scheduleRoutes=require('./routes/Schedule_Routes');
 const attendenceRoutes=require("./routes/Attendence_Routes");
 const authRoutes=require('./routes/Auth_Routes');
+const classroomsRoutes=require('./routes/classrooms_Routes');
 //Student_Routes
 const studentRoutes=require('./routes/Student_Routes');
 
@@ -29,6 +30,8 @@ app.use('/api/attendance',attendenceRoutes);
 app.use('/api/auth',authRoutes);
 
 app.use('/api/students',studentRoutes);
+
+app.use('/api/classrooms',classroomsRoutes);
 
 
 app.get('/', (req, res) => {
