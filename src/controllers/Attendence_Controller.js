@@ -1,31 +1,40 @@
 const dayjs=require('dayjs')
+const turf = require('@turf/turf');
 
 const AttendanceCode=require('../models/AttendanceCode_Model');
 const AttendanceRecord=require('../models/AttendanceRecord_Model');
 const Student = require('../models/Student_Model');
 const LeaveAdjustment = require('../models/LeaveAdjustment_Model');
+const Classroom = require("../models/Classroom_Model");
 const getDistanceFromLatLonInM = require('../utils/distance');
 
-exports.generateCode= async (req, res) => {
-  const { teacherId, department, subject, latitude, longitude } = req.body;
+exports.generateCode = async (req, res) => {
+  const { teacherId, department, subject, classroom } = req.body;
 
-  if (!teacherId || !department || !subject || !latitude || !longitude) {
+  if (!teacherId || !department || !subject || !classroom) {
     return res.status(400).json({ success: false, message: "Missing required fields" });
+  }
+
+  // Fetch classroom polygon from DB
+  const classroomDoc = await Classroom.findOne({ number: classroom });
+  if (!classroomDoc) {
+    return res.status(404).json({ success: false, message: "Classroom not found" });
   }
 
   // Generate random 4-digit code
   const code = Math.floor(1000 + Math.random() * 9000).toString();
   const generatedAt = new Date();
-  const expiresAt = new Date(generatedAt.getTime() + 1 * 60 * 1000); // 1 minutes validity
-  const formattedExpiresAt = `${dayjs(expiresAt).format('DD-MM-YYYY')}T${dayjs(expiresAt).format('hh:mm:ss A')}`;
+  const expiresAt = new Date(generatedAt.getTime() + 2 * 60 * 1000); // 2 minutes validity
+  const formattedExpiresAt = `${dayjs(expiresAt).format("DD-MM-YYYY")}T${dayjs(
+    expiresAt
+  ).format("hh:mm:ss A")}`;
 
   const newCode = new AttendanceCode({
     code,
     department,
     subject,
     teacherId,
-    latitude,
-    longitude,
+    classroom,
     generatedAt,
     expiresAt
   });
@@ -38,9 +47,10 @@ exports.generateCode= async (req, res) => {
       success: true,
       message: "Code generated successfully",
       code: newCode.code,
+      classroom: classroomDoc.number,
+      polygon: classroomDoc.polygon, // ✅ send polygon so student can check geofence
       expiresAt: formattedExpiresAt
     });
-
   } catch (err) {
     console.error("❌ Error generating code:", err);
     return res.status(500).json({ success: false, message: "Server error" });
@@ -48,7 +58,7 @@ exports.generateCode= async (req, res) => {
 };
 
 
-exports.getLatestCode=async (req, res) => {
+exports.getLatestCode = async (req, res) => {
   const { department, studentLat, studentLon } = req.body;
 
   if (!department || !studentLat || !studentLon) {
@@ -58,36 +68,38 @@ exports.getLatestCode=async (req, res) => {
   try {
     const now = new Date();
 
-    console.log("📥 Received request for department:", department);
+    // 🔹 Find latest valid code for department
     const latestCode = await AttendanceCode.findOne({
       department: department,
       expiresAt: { $gt: now }
-    }).sort({ generatedAt: -1 }); // latest one first
+    }).sort({ generatedAt: -1 });
 
     if (!latestCode) {
-      console.log("⚠️ No active code found for:", department);
       return res.status(404).json({ success: false, message: "No active code found" });
     }
 
-    // Check distance
-    const distance = getDistanceFromLatLonInM(
-      studentLat,
-      studentLon,
-      latestCode.latitude,
-      latestCode.longitude
-    );
+    // 🔹 Check if student point is inside classroom polygon using MongoDB
+    const insideClassroom = await Classroom.findOne({
+      number: latestCode.classroom,
+      polygon: {
+        $geoIntersects: {
+          $geometry: {
+            type: "Point",
+            coordinates: [parseFloat(studentLon), parseFloat(studentLat)] // ✅ lon, lat
+          }
+        }
+      }
+    });
 
-    if (distance > 30) {
-      console.log("🚫 Student not in range. Distance:", distance.toFixed(2), "m");
+    if (!insideClassroom) {
       return res.status(403).json({ success: false, message: "You are not in classroom range" });
     }
-
-    console.log("✅ Found active code:", latestCode.code, "Expires at:", latestCode.expiresAt);
 
     return res.status(200).json({
       success: true,
       message: "Code available",
       subject: latestCode.subject,
+      classroom: latestCode.classroom,
       expiresAt: latestCode.expiresAt,
       code: latestCode.code,
       active: true
@@ -99,7 +111,8 @@ exports.getLatestCode=async (req, res) => {
   }
 };
 
- exports.submitAttendance=async (req, res) => {
+
+exports.submitAttendance = async (req, res) => {
   const { studentId, department, code, studentLat, studentLon } = req.body;
 
   if (!studentId || !department || !code || !studentLat || !studentLon) {
@@ -109,6 +122,7 @@ exports.getLatestCode=async (req, res) => {
   try {
     const now = new Date();
 
+    // 🔹 Find active code
     const activeCode = await AttendanceCode.findOne({
       department: department,
       code: code,
@@ -119,38 +133,40 @@ exports.getLatestCode=async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid or expired code" });
     }
 
-    // ✅ Distance check
-    const distance = getDistanceFromLatLonInM(
-      studentLat,
-      studentLon,
-      activeCode.latitude,
-      activeCode.longitude
-    );
+    // 🔹 Check if student point is inside classroom polygon using MongoDB
+    const insideClassroom = await Classroom.findOne({
+      number: activeCode.classroom,
+      polygon: {
+        $geoIntersects: {
+          $geometry: {
+            type: "Point",
+            coordinates: [parseFloat(studentLon), parseFloat(studentLat)] // ✅ lon, lat
+          }
+        }
+      }
+    });
 
-    if (distance > 30) {
-      console.log("🚫 Student not in range during submit. Distance:", distance.toFixed(2), "m");
+    if (!insideClassroom) {
       return res.status(403).json({ success: false, message: "You are not in classroom range" });
     }
 
-    console.log("📥 Attendance Submission Request:");
-    console.log({ studentId, department, code, studentLat, studentLon });
-    console.log("✅ Active code found:", activeCode);
-
-    // ✅ Save student location too
+    // 🔹 Save attendance
     const newAttendance = new AttendanceRecord({
-      studentId,
-      department,
-      subject: activeCode.subject,
-      teacherId: activeCode.teacherId,
-      code: activeCode.code,
-      timestamp: new Date(),
-      studentLat,
-      studentLon
-    });
+  studentId,
+  department,
+  subject: activeCode.subject,
+  teacherId: activeCode.teacherId,
+  code: activeCode.code,
+  classroom: activeCode.classroom,
+  timestamp: new Date(),
+  studentLocation: {
+    type: "Point",
+    coordinates: [parseFloat(studentLon), parseFloat(studentLat)] // ✅ lon, lat
+  }
+});
 
     await newAttendance.save();
-    console.log("✅ Attendance saved:", newAttendance);
-
+    
     return res.status(200).json({ success: true, message: "Attendance marked successfully" });
 
   } catch (err) {
