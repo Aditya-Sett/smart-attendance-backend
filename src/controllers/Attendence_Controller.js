@@ -24,7 +24,7 @@ exports.generateCode = async (req, res) => {
   // Generate random 4-digit code
   const code = Math.floor(1000 + Math.random() * 9000).toString();
   const generatedAt = new Date();
-  const expiresAt = new Date(generatedAt.getTime() + 2 * 60 * 1000); // 2 minutes validity
+  const expiresAt = new Date(generatedAt.getTime() + 5 * 60 * 1000); // 5 minutes validity
   const formattedExpiresAt = `${dayjs(expiresAt).format("DD-MM-YYYY")}T${dayjs(
     expiresAt
   ).format("hh:mm:ss A")}`;
