@@ -1,5 +1,5 @@
 const dayjs=require('dayjs')
-//const turf = require('@turf/turf');
+const turf = require('@turf/turf');
 
 const AttendanceCode=require('../models/AttendanceCode_Model');
 const AttendanceRecord=require('../models/AttendanceRecord_Model');
@@ -78,20 +78,22 @@ exports.getLatestCode = async (req, res) => {
       return res.status(404).json({ success: false, message: "No active code found" });
     }
 
-    // 🔹 Check if student point is inside classroom polygon using MongoDB
-    const insideClassroom = await Classroom.findOne({
-      number: latestCode.classroom,
-      polygon: {
-        $geoIntersects: {
-          $geometry: {
-            type: "Point",
-            coordinates: [parseFloat(studentLon), parseFloat(studentLat)] // ✅ lon, lat
-          }
-        }
-      }
-    });
+    // 🔹 Get classroom polygon
+    const classroom = await Classroom.findOne({ number: latestCode.classroom });
+    if (!classroom) {
+      return res.status(404).json({ success: false, message: "Classroom not found" });
+    }
 
-    if (!insideClassroom) {
+    // 🔹 Inflate polygon by 5 meters tolerance
+    const bufferedPolygon = turf.buffer(classroom.polygon, 5, { units: "meters" });
+
+    // 🔹 Student point
+    const studentPoint = turf.point([parseFloat(studentLon), parseFloat(studentLat)]);
+
+    // 🔹 Check with buffer
+    const isInside = turf.booleanPointInPolygon(studentPoint, bufferedPolygon);
+
+    if (!isInside) {
       return res.status(403).json({ success: false, message: "You are not in classroom range" });
     }
 
@@ -133,40 +135,42 @@ exports.submitAttendance = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid or expired code" });
     }
 
-    // 🔹 Check if student point is inside classroom polygon using MongoDB
-    const insideClassroom = await Classroom.findOne({
-      number: activeCode.classroom,
-      polygon: {
-        $geoIntersects: {
-          $geometry: {
-            type: "Point",
-            coordinates: [parseFloat(studentLon), parseFloat(studentLat)] // ✅ lon, lat
-          }
-        }
-      }
-    });
+    // 🔹 Get classroom polygon
+    const classroom = await Classroom.findOne({ number: activeCode.classroom });
+    if (!classroom) {
+      return res.status(404).json({ success: false, message: "Classroom not found" });
+    }
 
-    if (!insideClassroom) {
+    // 🔹 Inflate polygon by 5 meters tolerance
+    const bufferedPolygon = turf.buffer(classroom.polygon, 5, { units: "meters" });
+
+    // 🔹 Student point
+    const studentPoint = turf.point([parseFloat(studentLon), parseFloat(studentLat)]);
+
+    // 🔹 Check with buffer
+    const isInside = turf.booleanPointInPolygon(studentPoint, bufferedPolygon);
+
+    if (!isInside) {
       return res.status(403).json({ success: false, message: "You are not in classroom range" });
     }
 
     // 🔹 Save attendance
     const newAttendance = new AttendanceRecord({
-  studentId,
-  department,
-  subject: activeCode.subject,
-  teacherId: activeCode.teacherId,
-  code: activeCode.code,
-  classroom: activeCode.classroom,
-  timestamp: new Date(),
-  studentLocation: {
-    type: "Point",
-    coordinates: [parseFloat(studentLon), parseFloat(studentLat)] // ✅ lon, lat
-  }
-});
+      studentId,
+      department,
+      subject: activeCode.subject,
+      teacherId: activeCode.teacherId,
+      code: activeCode.code,
+      classroom: activeCode.classroom,
+      timestamp: new Date(),
+      studentLocation: {
+        type: "Point",
+        coordinates: [parseFloat(studentLon), parseFloat(studentLat)]
+      }
+    });
 
     await newAttendance.save();
-    
+
     return res.status(200).json({ success: true, message: "Attendance marked successfully" });
 
   } catch (err) {
