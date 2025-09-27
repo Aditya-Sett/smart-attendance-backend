@@ -8,35 +8,31 @@ const LeaveAdjustment = require('../models/LeaveAdjustment_Model');
 const Classroom = require("../models/Classroom_Model");
 const getDistanceFromLatLonInM = require('../utils/distance');
 
+// ========== 1. Generate Code ==========
 exports.generateCode = async (req, res) => {
-  const { teacherId, department, subject, classroom } = req.body;
+  const { teacherId, department, subject, wifiFingerprint } = req.body;
 
-  if (!teacherId || !department || !subject || !classroom) {
+  if (!teacherId || !department || !subject || !wifiFingerprint) {
     return res.status(400).json({ success: false, message: "Missing required fields" });
-  }
-
-  // Fetch classroom polygon from DB
-  const classroomDoc = await Classroom.findOne({ number: classroom });
-  if (!classroomDoc) {
-    return res.status(404).json({ success: false, message: "Classroom not found" });
   }
 
   // Generate random 4-digit code
   const code = Math.floor(1000 + Math.random() * 9000).toString();
   const generatedAt = new Date();
-  const expiresAt = new Date(generatedAt.getTime() + 10 * 60 * 1000); // 5 minutes validity
+  const expiresAt = new Date(generatedAt.getTime() + 5 * 60 * 1000); // 5 mins validity
   const formattedExpiresAt = `${dayjs(expiresAt).format("DD-MM-YYYY")}T${dayjs(
     expiresAt
   ).format("hh:mm:ss A")}`;
+  const wifiFingerprintArray = Array.isArray(wifiFingerprint) ? wifiFingerprint : [];
 
   const newCode = new AttendanceCode({
     code,
     department,
     subject,
     teacherId,
-    classroom,
     generatedAt,
-    expiresAt
+    expiresAt,
+    wifiFingerprint:wifiFingerprintArray   // ✅ save teacher’s WiFi snapshot
   });
 
   try {
@@ -47,8 +43,6 @@ exports.generateCode = async (req, res) => {
       success: true,
       message: "Code generated successfully",
       code: newCode.code,
-      classroom: classroomDoc.number,
-      polygon: classroomDoc.polygon, // ✅ send polygon so student can check geofence
       expiresAt: formattedExpiresAt
     });
   } catch (err) {
@@ -57,18 +51,17 @@ exports.generateCode = async (req, res) => {
   }
 };
 
-
+// ========== 2. Get Latest Code ==========
 exports.getLatestCode = async (req, res) => {
-  const { department, studentLat, studentLon } = req.body;
+  const { department } = req.body;
 
-  if (!department || !studentLat || !studentLon) {
-    return res.status(400).json({ success: false, message: "Missing fields" });
+  if (!department) {
+    return res.status(400).json({ success: false, message: "Missing department" });
   }
 
   try {
     const now = new Date();
 
-    // 🔹 Find latest valid code for department
     const latestCode = await AttendanceCode.findOne({
       department: department,
       expiresAt: { $gt: now }
@@ -78,53 +71,32 @@ exports.getLatestCode = async (req, res) => {
       return res.status(404).json({ success: false, message: "No active code found" });
     }
 
-    // 🔹 Get classroom polygon
-    const classroom = await Classroom.findOne({ number: latestCode.classroom });
-    if (!classroom) {
-      return res.status(404).json({ success: false, message: "Classroom not found" });
-    }
-
-    // 🔹 Inflate polygon by 5 meters tolerance
-    const bufferedPolygon = turf.buffer(classroom.polygon, 5, { units: "meters" });
-
-    // 🔹 Student point
-    const studentPoint = turf.point([parseFloat(studentLon), parseFloat(studentLat)]);
-
-    // 🔹 Check with buffer
-    const isInside = turf.booleanPointInPolygon(studentPoint, bufferedPolygon);
-
-    if (!isInside) {
-      return res.status(403).json({ success: false, message: "You are not in classroom range" });
-    }
-
     return res.status(200).json({
       success: true,
       message: "Code available",
       subject: latestCode.subject,
-      classroom: latestCode.classroom,
       expiresAt: latestCode.expiresAt,
       code: latestCode.code,
-      active: true
+      active: true,
+      wifiFingerprint: latestCode.wifiFingerprint // ✅ send reference fingerprint
     });
-
   } catch (err) {
     console.error("❌ Error fetching latest code:", err);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
-
+// ========== 3. Submit Attendance ==========
 exports.submitAttendance = async (req, res) => {
-  const { studentId, department, code, studentLat, studentLon } = req.body;
+  const { studentId, department, code, wifiFingerprint } = req.body;
 
-  if (!studentId || !department || !code || !studentLat || !studentLon) {
+  if (!studentId || !department || !code || !wifiFingerprint) {
     return res.status(400).json({ success: false, message: "Missing fields" });
   }
 
   try {
     const now = new Date();
 
-    // 🔹 Find active code
     const activeCode = await AttendanceCode.findOne({
       department: department,
       code: code,
@@ -135,38 +107,40 @@ exports.submitAttendance = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid or expired code" });
     }
 
-    // 🔹 Get classroom polygon
-    const classroom = await Classroom.findOne({ number: activeCode.classroom });
-    if (!classroom) {
-      return res.status(404).json({ success: false, message: "Classroom not found" });
+    /*// ✅ Compare WiFi fingerprints (very simple version)
+    const matchCount = wifiFingerprint.filter(studentAp =>
+      activeCode.wifiFingerprint.some(
+        teacherAp => teacherAp.BSSID === studentAp.BSSID
+      )
+    ).length;*/
+    console.log("📡 Teacher FP:", activeCode.wifiFingerprint);
+    console.log("📡 Student FP:", wifiFingerprint);
+    const teacherFingerprint = Array.isArray(activeCode.wifiFingerprint) ? activeCode.wifiFingerprint : [];
+    const studentFingerprint = Array.isArray(wifiFingerprint) ? wifiFingerprint : [];
+    const matches = studentFingerprint.filter(studentAp =>
+  teacherFingerprint.some(
+    teacherAp =>
+      teacherAp.BSSID === studentAp.BSSID &&
+      Math.abs(teacherAp.level - studentAp.level) <= 10
+  )
+);
+
+    //const similarity = matchCount / activeCode.wifiFingerprint.length;
+    const similarity = matches.length / Math.max(teacherFingerprint.length, 1);
+
+    if (similarity < 0.5) { // threshold 50%
+      return res.status(403).json({ success: false, message: "WiFi fingerprint mismatch" });
     }
 
-    // 🔹 Inflate polygon by 5 meters tolerance
-    const bufferedPolygon = turf.buffer(classroom.polygon, 5, { units: "meters" });
-
-    // 🔹 Student point
-    const studentPoint = turf.point([parseFloat(studentLon), parseFloat(studentLat)]);
-
-    // 🔹 Check with buffer
-    const isInside = turf.booleanPointInPolygon(studentPoint, bufferedPolygon);
-
-    if (!isInside) {
-      return res.status(403).json({ success: false, message: "You are not in classroom range" });
-    }
-
-    // 🔹 Save attendance
+    // Save attendance
     const newAttendance = new AttendanceRecord({
       studentId,
       department,
       subject: activeCode.subject,
       teacherId: activeCode.teacherId,
       code: activeCode.code,
-      classroom: activeCode.classroom,
       timestamp: new Date(),
-      studentLocation: {
-        type: "Point",
-        coordinates: [parseFloat(studentLon), parseFloat(studentLat)]
-      }
+      wifiFingerprint: wifiFingerprint
     });
 
     await newAttendance.save();

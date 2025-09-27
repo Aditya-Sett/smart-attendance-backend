@@ -6,24 +6,19 @@ const attendanceRecordSchema = new mongoose.Schema({
   subject: { type: String, required: true },
   teacherId: { type: String, required: true },
   code: { type: String, required: true },
-  classroom: { type: String, required: true }, // classroom number reference
   timestamp: { type: Date, default: Date.now },
 
   // ✅ Store student's location as GeoJSON Point
-  studentLocation: {
-    type: {
-      type: String,
-      enum: ["Point"],
-      required: true
-    },
-    coordinates: {
-      type: [Number], // [longitude, latitude]
-      required: true
+  wifiFingerprint: [
+    {
+      SSID: { type: String },
+      BSSID: { type: String },
+      level: { type: Number }
     }
-  }
+  ]
 }, { strict: true });
 
 // ✅ Add geospatial index for future queries
-attendanceRecordSchema.index({ studentLocation: "2dsphere" });
+//attendanceRecordSchema.index({ studentLocation: "2dsphere" });
 
 module.exports = mongoose.model('AttendanceRecord', attendanceRecordSchema);
