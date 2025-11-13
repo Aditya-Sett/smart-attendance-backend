@@ -7,22 +7,27 @@ const Student = require('../models/Student_Model');
 const LeaveAdjustment = require('../models/LeaveAdjustment_Model');
 const Classroom = require("../models/Classroom_Model");
 const getDistanceFromLatLonInM = require('../utils/distance');
+const { getAcademicYear, getAdmissionYear } = require('../utils/academicYear_utils');
 
 // ========== 1. Generate Code ==========
 exports.generateCode = async (req, res) => {
-  const { teacherId, department, subject, wifiFingerprint } = req.body;
+  const { teacherId, department, subject, wifiFingerprint, className } = req.body;  //⚡ added className
 
-  if (!teacherId || !department || !subject || !wifiFingerprint) {
+  if (!teacherId || !department || !subject || !wifiFingerprint || !className) {
     return res.status(400).json({ success: false, message: "Missing required fields" });
   }
+
+  // ⚡ Determine academic year & admission year
+  const academicYear = getAcademicYear();
+  const admissionYear = getAdmissionYear(academicYear, className);
 
   // Generate random 4-digit code
   const code = Math.floor(1000 + Math.random() * 9000).toString();
   const generatedAt = new Date();
   const expiresAt = new Date(generatedAt.getTime() + 5 * 60 * 1000); // 5 mins validity
-  const formattedExpiresAt = `${dayjs(expiresAt).format("DD-MM-YYYY")}T${dayjs(
+  /*const formattedExpiresAt = `${dayjs(expiresAt).format("DD-MM-YYYY")}T${dayjs(
     expiresAt
-  ).format("hh:mm:ss A")}`;
+  ).format("hh:mm:ss A")}`;*/
   const wifiFingerprintArray = Array.isArray(wifiFingerprint) ? wifiFingerprint : [];
 
   const newCode = new AttendanceCode({
@@ -30,6 +35,9 @@ exports.generateCode = async (req, res) => {
     department,
     subject,
     teacherId,
+    className,          // ⚡ store class
+    academicYear,       // ⚡ store academic year
+    admissionYear,      // ⚡ store admission year
     generatedAt,
     expiresAt,
     wifiFingerprint:wifiFingerprintArray   // ✅ save teacher’s WiFi snapshot
@@ -43,7 +51,9 @@ exports.generateCode = async (req, res) => {
       success: true,
       message: "Code generated successfully",
       code: newCode.code,
-      expiresAt: formattedExpiresAt
+      expiresAt: dayjs(expiresAt).format("DD-MM-YYYY hh:mm:ss A"),
+      academicYear,
+      admissionYear
     });
   } catch (err) {
     console.error("❌ Error generating code:", err);
@@ -53,17 +63,20 @@ exports.generateCode = async (req, res) => {
 
 // ========== 2. Get Latest Code ==========
 exports.getLatestCode = async (req, res) => {
-  const { department } = req.body;
+  const { department, admissionYear } = req.body;
 
-  if (!department) {
-    return res.status(400).json({ success: false, message: "Missing department" });
+  if (!department || !admissionYear) {
+    return res.status(400).json({ success: false, message: "Missing department and admissionYear" });
   }
+
+  console.log("🟩 Checking code for:", { department, admissionYear });
 
   try {
     const now = new Date();
 
     const latestCode = await AttendanceCode.findOne({
       department: department,
+      admissionYear,
       expiresAt: { $gt: now }
     }).sort({ generatedAt: -1 });
 
@@ -78,7 +91,9 @@ exports.getLatestCode = async (req, res) => {
       expiresAt: latestCode.expiresAt,
       code: latestCode.code,
       active: true,
-      wifiFingerprint: latestCode.wifiFingerprint // ✅ send reference fingerprint
+      wifiFingerprint: latestCode.wifiFingerprint, // ✅ send reference fingerprint
+      className: latestCode.className,              // optional - for frontend use
+      academicYear: latestCode.academicYear         // optional - helpful context
     });
   } catch (err) {
     console.error("❌ Error fetching latest code:", err);

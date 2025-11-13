@@ -7,7 +7,9 @@ const studentSchema = new mongoose.Schema({
   contact: { type: String, required: true },
   email: { type: String, required: true },
   password: { type: String, required: true },
-  role: { type: String, required: true }
+  role: { type: String, required: true },
+  admission_year: { type: String, required: true },
+  roll: { type: String, required: true }
   // add other fields if needed
 }, { strict: true }); // ✅ Force strict mode
 
