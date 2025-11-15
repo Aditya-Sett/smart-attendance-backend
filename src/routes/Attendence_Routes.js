@@ -6,12 +6,14 @@ const {
   submitAttendance,
   getStudentSummary,
   getSubjectSummary,
-  approveLeave
+  approveLeave,
+  deleteCode
 } = require('../controllers/Attendence_Controller');
 
 const { exportAttendanceExcel } = require("../controllers/AttendanceExport_Controller");
 
 router.post('/generate', generateCode);
+router.post('/delete',deleteCode)
 router.post('/latest', getLatestCode);
 router.post('/submit', submitAttendance);
 router.get('/summary/:studentId/:department', getStudentSummary);

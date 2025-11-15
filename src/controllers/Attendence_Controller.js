@@ -1,5 +1,6 @@
 const dayjs=require('dayjs')
 const turf = require('@turf/turf');
+const timezone = require('dayjs/plugin/timezone');
 
 const AttendanceCode=require('../models/AttendanceCode_Model');
 const AttendanceRecord=require('../models/AttendanceRecord_Model');
@@ -7,7 +8,10 @@ const Student = require('../models/Student_Model');
 const LeaveAdjustment = require('../models/LeaveAdjustment_Model');
 const Classroom = require("../models/Classroom_Model");
 const getDistanceFromLatLonInM = require('../utils/distance');
-const { getAcademicYear, getAdmissionYear } = require('../utils/academicYear_utils');
+const { getAcademicYear, getAdmissionYear, isCodeExist } = require('../utils/academicYear_utils');
+
+
+dayjs.extend(timezone);
 
 // ========== 1. Generate Code ==========
 exports.generateCode = async (req, res) => {
@@ -21,10 +25,18 @@ exports.generateCode = async (req, res) => {
   const academicYear = getAcademicYear();
   const admissionYear = getAdmissionYear(academicYear, className);
 
+  const isCodeExists= await isCodeExist(department,admissionYear,teacherId,subject);
+
+  console.log("isCodeEx: ",isCodeExists)
+
+  if (isCodeExists) {
+      return res.status(409).json({ success: false, message: `Previous code is ACTIVE for ${department}-> ${admissionYear}` });
+  }
+
   // Generate random 4-digit code
   const code = Math.floor(1000 + Math.random() * 9000).toString();
   const generatedAt = new Date();
-  const expiresAt = new Date(generatedAt.getTime() + 5 * 60 * 1000); // 5 mins validity
+  const expiresAt = new Date(generatedAt.getTime() + process.env.EXPIRY_TIME * 60 * 1000); // 5 mins validity
   /*const formattedExpiresAt = `${dayjs(expiresAt).format("DD-MM-YYYY")}T${dayjs(
     expiresAt
   ).format("hh:mm:ss A")}`;*/
@@ -51,7 +63,8 @@ exports.generateCode = async (req, res) => {
       success: true,
       message: "Code generated successfully",
       code: newCode.code,
-      expiresAt: dayjs(expiresAt).format("DD-MM-YYYY hh:mm:ss A"),
+      generatedAt:dayjs(generatedAt).tz("Asia/Kolkata").format("DD-MM-YYYY hh:mm:ss A"),
+      expiresAt: dayjs(expiresAt).tz("Asia/Kolkata").format("DD-MM-YYYY hh:mm:ss A"),
       academicYear,
       admissionYear
     });
@@ -61,6 +74,45 @@ exports.generateCode = async (req, res) => {
   }
 };
 
+exports.deleteCode= async(req, res)=> {
+  const { teacherId, department, subject, className } = req.body;
+
+  if (!teacherId || !department || !subject || !className) {
+    return res.status(400).json({ success: false, message: "Missing required fields" });
+  }
+
+  try{
+    const result=await AttendanceCode.deleteMany({
+      teacherId,
+      department,
+      subject,
+      className
+    });
+
+    if(result.deletedCount==0){
+      return res.status(404).json({ 
+        success: false, 
+        message: `No codes found for [${teacherId}, ${department}, ${subject}, ${className}]`
+      });
+    }
+
+    return res.status(200).json({ 
+      success: true, 
+      message: `${result.deletedCount} code(s) deleted successfully` 
+    });
+
+  }catch(error){
+     console.error("Error deleting code:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Internal server error",
+      error: error.message 
+    });
+  }
+
+};
+
+//.format("DD-MM-YYYY hh:mm:ss A")
 // ========== 2. Get Latest Code ==========
 exports.getLatestCode = async (req, res) => {
   const { department, admissionYear } = req.body;
