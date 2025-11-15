@@ -27,8 +27,6 @@ exports.generateCode = async (req, res) => {
 
   const isCodeExists= await isCodeExist(department,admissionYear,teacherId,subject);
 
-  console.log("isCodeEx: ",isCodeExists)
-
   if (isCodeExists) {
       return res.status(409).json({ success: false, message: `Previous code is ACTIVE for ${department}-> ${admissionYear}` });
   }
@@ -65,6 +63,10 @@ exports.generateCode = async (req, res) => {
       code: newCode.code,
       generatedAt:dayjs(generatedAt).tz("Asia/Kolkata").format("DD-MM-YYYY hh:mm:ss A"),
       expiresAt: dayjs(expiresAt).tz("Asia/Kolkata").format("DD-MM-YYYY hh:mm:ss A"),
+      subject,
+      teacherId,
+      className,
+      department,
       academicYear,
       admissionYear
     });

@@ -34,8 +34,6 @@ exports.isCodeExist=async (department, admissionYear,teacherId,subject) => {
   try {
     const now = new Date();
 
-    console.log("Dat: ",now)
-
     // Find ALL matching codes (active and expired)
     const allMatchingCodes = await AttendanceCode.find({
       teacherId: teacherId,
@@ -53,8 +51,6 @@ exports.isCodeExist=async (department, admissionYear,teacherId,subject) => {
       admissionYear: admissionYear,
       expiresAt: { $gt: now }
     }).sort({ generatedAt: -1 });
-
-    console.log("LatestC: ",latestCode)
 
     if(latestCode!=null){
       return true;
