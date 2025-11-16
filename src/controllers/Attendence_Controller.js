@@ -84,11 +84,15 @@ exports.deleteCode= async(req, res)=> {
   }
 
   try{
+
+    const now = new Date();
+
     const result=await AttendanceCode.deleteMany({
       teacherId,
       department,
       subject,
-      className
+      className,
+      expiresAt: { $gt: now }
     });
 
     if(result.deletedCount==0){
