@@ -16,7 +16,8 @@ const attendanceCodeSchema = new mongoose.Schema({
   admissionYear: { type: String },
   generatedAt: { type: Date, required: true, default: Date.now },
   expiresAt: { type: Date, required: true },
-  wifiFingerprint: [wifiFingerprintSchema]  // ✅ Use schema with _id: false
+  wifiFingerprint: [wifiFingerprintSchema],  // ✅ Use schema with _id: false
+  bluetoothUuid: { type: String, required: true }
 }, { strict: true });
 
 module.exports = mongoose.model('AttendanceCode', attendanceCodeSchema);

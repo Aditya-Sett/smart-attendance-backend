@@ -15,9 +15,9 @@ dayjs.extend(timezone);
 
 // ========== 1. Generate Code ==========
 exports.generateCode = async (req, res) => {
-  const { teacherId, department, subject, wifiFingerprint, className } = req.body;  //⚡ added className
+  const { teacherId, department, subject, wifiFingerprint, className, bluetoothUuid } = req.body;  //⚡ added className
 
-  if (!teacherId || !department || !subject || !wifiFingerprint || !className) {
+  if (!teacherId || !department || !subject || !wifiFingerprint || !className || !bluetoothUuid) {
     return res.status(400).json({ success: false, message: "Missing required fields" });
   }
 
@@ -50,7 +50,8 @@ exports.generateCode = async (req, res) => {
     admissionYear,      // ⚡ store admission year
     generatedAt,
     expiresAt,
-    wifiFingerprint:wifiFingerprintArray   // ✅ save teacher’s WiFi snapshot
+    wifiFingerprint:wifiFingerprintArray,   // ✅ save teacher’s WiFi snapshot
+    bluetoothUuid
   });
 
   try {
@@ -151,7 +152,8 @@ exports.getLatestCode = async (req, res) => {
       active: true,
       wifiFingerprint: latestCode.wifiFingerprint, // ✅ send reference fingerprint
       className: latestCode.className,              // optional - for frontend use
-      academicYear: latestCode.academicYear         // optional - helpful context
+      academicYear: latestCode.academicYear ,        // optional - helpful context
+      bluetoothUuid:latestCode.bluetoothUuid
     });
   } catch (err) {
     console.error("❌ Error fetching latest code:", err);
