@@ -203,9 +203,9 @@ exports.submitAttendance = async (req, res) => {
     //const similarity = matchCount / activeCode.wifiFingerprint.length;
     const similarity = matches.length / Math.max(teacherFingerprint.length, 1);
 
-    if (similarity < 0.5) { // threshold 50%
-      return res.status(403).json({ success: false, message: "WiFi fingerprint mismatch" });
-    }
+    // if (similarity < 0.5) { // threshold 50%
+    //   return res.status(403).json({ success: false, message: "WiFi fingerprint mismatch" });
+    // }
 
     // Save attendance
     const newAttendance = new AttendanceRecord({
