@@ -399,3 +399,56 @@ exports.approveLeave=async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
+exports.attendance_taken_by_teacherid = async (req, res) => {
+  const { teacherId } = req.body;
+
+  if (!teacherId) {
+    return res.status(400).json({
+      success: false,
+      message: "teacherId is required"
+    });
+  }
+
+  try {
+    // Fetch all codes for this teacher
+    const codes = await AttendanceCode.find({ teacherId }).sort({ generatedAt: -1 });
+
+    if (!codes || codes.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No codes found for this teacher",
+        data: []
+      });
+    }
+
+    // Clean formatted response
+    const formatted = codes.map(c => ({
+      id: c._id,
+      code: c.code,
+      department: c.department,
+      subject: c.subject,
+      className: c.className,
+      academicYear: c.academicYear,
+      admissionYear: c.admissionYear,
+      generatedAt: dayjs(c.generatedAt).tz("Asia/Kolkata").format("DD-MM-YYYY hh:mm:ss A"),
+      expiresAt: dayjs(c.expiresAt).tz("Asia/Kolkata").format("DD-MM-YYYY hh:mm:ss A"),
+      //wifiFingerprint: c.wifiFingerprint,
+      bluetoothUuid: c.bluetoothUuid
+    }));
+
+    return res.status(200).json({
+      success: true,
+      count: formatted.length,
+      data: formatted
+    });
+
+  } catch (error) {
+    console.error("❌ Error fetching codes by teacher:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message
+    });
+  }
+};

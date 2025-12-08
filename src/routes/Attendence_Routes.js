@@ -7,7 +7,8 @@ const {
   getStudentSummary,
   getSubjectSummary,
   approveLeave,
-  deleteCode
+  deleteCode,
+  attendance_taken_by_teacherid
 } = require('../controllers/Attendence_Controller');
 
 const { exportAttendanceExcel } = require("../controllers/AttendanceExport_Controller");
@@ -20,5 +21,6 @@ router.get('/summary/:studentId/:department', getStudentSummary);
 router.get('/students/:department/:subject', getSubjectSummary);
 router.post('/approve-leave', approveLeave);
 router.get('/export/:department/:subject/:className/:academicYear', exportAttendanceExcel);
+router.post('/attendance_taken_by_teacherid', attendance_taken_by_teacherid);
 
 module.exports = router;
