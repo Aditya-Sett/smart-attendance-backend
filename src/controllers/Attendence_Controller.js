@@ -433,6 +433,8 @@ exports.attendance_taken_by_teacherid = async (req, res) => {
       admissionYear: c.admissionYear,
       generatedAt: dayjs(c.generatedAt).tz("Asia/Kolkata").format("DD-MM-YYYY hh:mm:ss A"),
       expiresAt: dayjs(c.expiresAt).tz("Asia/Kolkata").format("DD-MM-YYYY hh:mm:ss A"),
+      //generatedAtOri: c.generatedAt,
+      //expiresAtOri: c.expiresAt,
       //wifiFingerprint: c.wifiFingerprint,
       bluetoothUuid: c.bluetoothUuid
     }));
@@ -449,6 +451,167 @@ exports.attendance_taken_by_teacherid = async (req, res) => {
       success: false,
       message: "Server error",
       error: error.message
+    });
+  }
+};
+
+// ========== 8. Get Attendance Details for a Specific Code ==========
+exports.getAttendanceDetails = async (req, res) => {
+  const { teacherId, code, generatedAt, expiresAt } = req.body;
+
+  if (!teacherId || !code || !generatedAt || !expiresAt) {
+    return res.status(400).json({ 
+      success: false, 
+      message: "Missing required fields: teacherId, code, generatedAt, expiresAt" 
+    });
+  }
+  
+  console.log("teacherId: ", teacherId);
+  console.log("code: ", code);
+  console.log("generatedAt (raw): ", generatedAt);
+  console.log("expiresAt (raw): ", expiresAt);
+
+  try {
+    // Parse DD-MM-YYYY HH:MM:SS AM/PM format
+    const parseCustomDate = (dateString) => {
+      // Example: "08-12-2025 07:12:06 PM"
+      const parts = dateString.split(' ');
+      const datePart = parts[0]; // "08-12-2025"
+      const timePart = parts[1]; // "07:12:06"
+      const ampm = parts[2]; // "PM"
+      
+      const [day, month, year] = datePart.split('-').map(Number);
+      let [hours, minutes, seconds] = timePart.split(':').map(Number);
+      
+      // Convert 12-hour format to 24-hour format
+      if (ampm === 'PM' && hours < 12) {
+        hours += 12;
+      } else if (ampm === 'AM' && hours === 12) {
+        hours = 0;
+      }
+      
+      // Create Date object (month is 0-indexed in JavaScript)
+      return new Date(Date.UTC(year, month - 1, day, hours, minutes, seconds));
+    };
+
+    const startDate = parseCustomDate(generatedAt);
+    const endDate = parseCustomDate(expiresAt);
+
+    console.log("Searching for code with:");
+    console.log("teacherId:", teacherId);
+    console.log("code:", code);
+    console.log("generatedAt (parsed):", startDate);
+    console.log("expiresAt (parsed):", endDate);
+    console.log("generatedAt (ISO):", startDate.toISOString());
+    console.log("expiresAt (ISO):", endDate.toISOString());
+
+    // 1. Find the attendance code record with flexible date matching
+    let codeRecord = await AttendanceCode.findOne({
+      teacherId: teacherId.trim(),
+      code: code.trim(),
+      generatedAt: {
+        $gte: new Date(startDate.getTime() - 5000), // 5 seconds before
+        $lte: new Date(startDate.getTime() + 5000)  // 5 seconds after
+      }
+    });
+
+    if (!codeRecord) {
+      console.log("No exact match found, trying without date...");
+      // Try without date matching as fallback
+      const codeRecordFallback = await AttendanceCode.findOne({
+        teacherId: teacherId.trim(),
+        code: code.trim()
+      }).sort({ generatedAt: -1 }); // Get most recent
+
+      if (!codeRecordFallback) {
+        return res.status(404).json({ 
+          success: false, 
+          message: "Attendance code not found" 
+        });
+      }
+      
+      console.log("Found fallback record:", codeRecordFallback);
+      codeRecord = codeRecordFallback; // Assign to the outer variable
+    }
+
+    console.log("Found code record:", codeRecord);
+
+    // 2. Find all attendance records for this code within the time range
+    // Use codeRecord's actual dates instead of parsed ones
+    const attendanceRecords = await AttendanceRecord.find({
+      teacherId: teacherId.trim(),
+      code: code.trim(),
+      timestamp: { 
+        $gte: new Date(codeRecord.generatedAt.getTime() - 30000), // 30 seconds before
+        $lte: new Date(codeRecord.expiresAt.getTime() + 30000)    // 30 seconds after
+      }
+    });
+
+    console.log("Found attendance records:", attendanceRecords.length);
+
+    // Extract studentIds who are present
+    const presentStudentIds = attendanceRecords.map(record => record.studentId);
+
+    // 3. Find department and admission_year from any one student who is present
+    let department = codeRecord.department;
+    let admissionYear = codeRecord.admissionYear;
+    
+    // If we have at least one attendance record, verify department from student collection
+    if (presentStudentIds.length > 0) {
+      const sampleStudent = await Student.findOne({ 
+        studentid: presentStudentIds[0] 
+      });
+      
+      if (sampleStudent) {
+        department = sampleStudent.department || codeRecord.department;
+        admissionYear = sampleStudent.admission_year || codeRecord.admissionYear;
+      }
+    }
+
+    // 4. Find all students in this department and admission year
+    const allStudents = await Student.find({ 
+      department: department.trim(),
+      admission_year: admissionYear 
+    }).sort({ roll: 1 }); // Sort by roll number
+
+    // 5. Prepare response with status (P/A)
+    const attendanceDetails = allStudents.map(student => {
+      const isPresent = presentStudentIds.includes(student.studentid);
+      return {
+        roll: student.roll,
+        name: student.name,
+        status: isPresent ? "P" : "A"
+      };
+    });
+
+    // 6. Sort by roll number (already done in query, but ensuring)
+    attendanceDetails.sort((a, b) => {
+      // Convert roll to number if possible, otherwise string compare
+      const rollA = isNaN(a.roll) ? a.roll : Number(a.roll);
+      const rollB = isNaN(b.roll) ? b.roll : Number(b.roll);
+      return rollA - rollB;
+    });
+
+    return res.status(200).json({
+      success: true,
+      code,
+      teacherId,
+      department,
+      admissionYear,
+      generatedAt: codeRecord.generatedAt,
+      expiresAt: codeRecord.expiresAt,
+      totalStudents: allStudents.length,
+      presentCount: presentStudentIds.length,
+      absentCount: allStudents.length - presentStudentIds.length,
+      records: attendanceDetails
+    });
+
+  } catch (error) {
+    console.error("❌ Error fetching attendance details:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Server error",
+      error: error.message 
     });
   }
 };
