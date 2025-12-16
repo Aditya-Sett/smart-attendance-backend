@@ -13,6 +13,7 @@ const {
 } = require('../controllers/Attendence_Controller');
 
 const { exportAttendanceExcel } = require("../controllers/AttendanceExport_Controller");
+const { helth_check } = require("../controllers/Helth-check_Controller");
 
 router.post('/generate', generateCode);
 router.post('/delete',deleteCode)
@@ -24,5 +25,6 @@ router.post('/approve-leave', approveLeave);
 router.get('/export/:department/:subject/:className/:academicYear', exportAttendanceExcel);
 router.post('/attendance_taken_by_teacherid', attendance_taken_by_teacherid);
 router.post('/details', getAttendanceDetails);
+router.get('/health-check', helth_check);
 
 module.exports = router;
