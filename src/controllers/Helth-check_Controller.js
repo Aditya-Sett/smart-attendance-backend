@@ -1,7 +1,7 @@
 const dayjs=require('dayjs');
 const timezone = require('dayjs/plugin/timezone');
 dayjs.extend(timezone);
-exports.helth_check = (res) => {
+exports.health_check = (req,res) => {
     return res.status(201).json({
           success: true,
           message: "Server is up",
