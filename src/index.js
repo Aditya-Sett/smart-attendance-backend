@@ -13,6 +13,7 @@ const authRoutes=require('./routes/Auth_Routes');
 const classroomsRoutes=require('./routes/classrooms_Routes');
 //Student_Routes
 const studentRoutes=require('./routes/Student_Routes');
+const curriculumRoutes=require('./routes/curriculumRoutes');
 
 const { SMART_ATTENDENCE_SETVER_RUN, SERVER_RUNNING } = require('./constants/Message_Contants');
 
@@ -42,6 +43,8 @@ app.use('/api/classrooms',classroomsRoutes);
 
 // Use scheduler routes
 app.use('/api/scheduler', schedulerRoutes);
+
+app.use("/api/curriculum", curriculumRoutes);
 
 
 app.get('/', (req, res) => {
