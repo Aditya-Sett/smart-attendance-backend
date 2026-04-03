@@ -12,6 +12,7 @@ const attendanceCodeSchema = new mongoose.Schema({
   subject: { type: String, required: true },
   teacherId: { type: String, required: true },
   className: { type: String, required: true },
+  sem: { type: String, required: true },
   academicYear: { type: String, required: true },
   admissionYear: { type: String },
   generatedAt: { type: Date, required: true, default: Date.now },

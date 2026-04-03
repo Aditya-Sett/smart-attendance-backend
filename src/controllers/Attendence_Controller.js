@@ -15,11 +15,25 @@ dayjs.extend(timezone);
 
 // ========== 1. Generate Code ==========
 exports.generateCode = async (req, res) => {
-  const { teacherId, department, subject, wifiFingerprint, className, bluetoothUuid } = req.body;  //⚡ added className
+  const { teacherId, department, subject, wifiFingerprint, sem, bluetoothUuid } = req.body;  //⚡ added className
 
-  if (!teacherId || !department || !subject || !wifiFingerprint || !className || !bluetoothUuid) {
+  if (!teacherId || !department || !subject || !wifiFingerprint || !sem || !bluetoothUuid) {
     return res.status(400).json({ success: false, message: "Missing required fields" });
   }
+
+  let className = "";
+
+  if (sem === "1st" || sem === "2nd"){
+    className = "1st Year";
+  } else if (sem === "3rd" || sem === "4th") {
+  className = "2nd Year";
+} else if (sem === "5th" || sem === "6th") {
+  className = "3rd Year";
+} else if (sem === "7th" || sem === "8th") {
+  className = "4th Year";
+} else {
+  return res.status(400).json({ success: false, message: "Invalid semester" });
+}
 
   // ⚡ Determine academic year & admission year
   const academicYear = getAcademicYear();
@@ -45,7 +59,8 @@ exports.generateCode = async (req, res) => {
     department,
     subject,
     teacherId,
-    className,          // ⚡ store class
+    className,      // ⚡ store class
+    sem,
     academicYear,       // ⚡ store academic year
     admissionYear,      // ⚡ store admission year
     generatedAt,
@@ -67,6 +82,7 @@ exports.generateCode = async (req, res) => {
       subject,
       teacherId,
       className,
+      sem,
       department,
       academicYear,
       admissionYear
