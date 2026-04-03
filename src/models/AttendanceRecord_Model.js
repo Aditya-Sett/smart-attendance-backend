@@ -6,6 +6,8 @@ const attendanceRecordSchema = new mongoose.Schema({
   subject: { type: String, required: true },
   teacherId: { type: String, required: true },
   code: { type: String, required: true },
+  academic_year: { type: String, required: true },
+  sem: { type: String, required: true },
   timestamp: { type: Date, default: Date.now },
 
   // ✅ Store student's location as GeoJSON Point

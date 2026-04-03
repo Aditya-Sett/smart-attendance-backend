@@ -179,9 +179,9 @@ exports.getLatestCode = async (req, res) => {
 
 // ========== 3. Submit Attendance ==========
 exports.submitAttendance = async (req, res) => {
-  const { studentId, department, code, wifiFingerprint } = req.body;
+  const { studentId, department, code, academic_year, sem, wifiFingerprint } = req.body;
 
-  if (!studentId || !department || !code || !wifiFingerprint) {
+  if (!studentId || !department || !code || !academic_year || !sem || !wifiFingerprint) {
     return res.status(400).json({ success: false, message: "Missing fields" });
   }
 
@@ -230,6 +230,8 @@ exports.submitAttendance = async (req, res) => {
       subject: activeCode.subject,
       teacherId: activeCode.teacherId,
       code: activeCode.code,
+      academic_year: academic_year,
+      sem: sem,
       timestamp: new Date(),
       wifiFingerprint: wifiFingerprint
     });
