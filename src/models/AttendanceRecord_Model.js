@@ -17,10 +17,16 @@ const attendanceRecordSchema = new mongoose.Schema({
       BSSID: { type: String },
       level: { type: Number }
     }
-  ]
+  ],
+  by: { type: String, required: true }
 }, { strict: true });
 
 // ✅ Add geospatial index for future queries
 //attendanceRecordSchema.index({ studentLocation: "2dsphere" });
+
+// attendanceRecordSchema.index(
+//   { studentId: 1, subject: 1, academic_year: 1, sem: 1 , code: 1, department: 1}, 
+//   { unique: true }
+// );
 
 module.exports = mongoose.model('AttendanceRecord', attendanceRecordSchema);
