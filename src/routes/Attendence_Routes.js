@@ -4,6 +4,7 @@ const {
   generateCode,
   getLatestCode,
   submitAttendance,
+  saveAttendance,
   getStudentSummary,
   getSubjectSummary,
   approveLeave,
@@ -19,6 +20,7 @@ router.post('/generate', generateCode);
 router.post('/delete',deleteCode)
 router.post('/latest', getLatestCode);
 router.post('/submit', submitAttendance);
+router.post('/save', saveAttendance);
 router.get('/summary/:studentId/:department', getStudentSummary);
 router.get('/students/:department/:subject', getSubjectSummary);
 router.post('/approve-leave', approveLeave);

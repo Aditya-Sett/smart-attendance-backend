@@ -181,7 +181,7 @@ exports.getLatestCode = async (req, res) => {
 exports.submitAttendance = async (req, res) => {
   const { studentId, department, code, academic_year, sem, wifiFingerprint } = req.body;
 
-  if (!studentId || !department || !code || !academic_year || !sem || !wifiFingerprint) {
+  if (!studentId || !department || !code || !academic_year || !sem) {
     return res.status(400).json({ success: false, message: "Missing fields" });
   }
 
@@ -233,7 +233,8 @@ exports.submitAttendance = async (req, res) => {
       academic_year: academic_year,
       sem: sem,
       timestamp: new Date(),
-      wifiFingerprint: wifiFingerprint
+      wifiFingerprint: wifiFingerprint,
+      by: "A"
     });
 
     await newAttendance.save();
@@ -242,6 +243,68 @@ exports.submitAttendance = async (req, res) => {
 
   } catch (err) {
     console.error("❌ Error submitting attendance:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+exports.saveAttendance = async (req, res) => {
+  // Destructure the list of students and the shared session details
+  const { students,teacherId,department, generatedAt, subject,academic_year, sem } = req.body;
+
+  // 1. Basic Validation
+  if (!Array.isArray(students) || students.length === 0 || !department || !academic_year || !sem || !teacherId || !generatedAt || !subject) {
+    return res.status(400).json({ success: false, message: "Missing required fields or empty student list" });
+  }
+
+  try {
+
+    // 2. Validate the Attendance Code once for the whole batch
+    const codeExist = await AttendanceCode.findOne({
+      teacherId: teacherId,
+      department: department,
+      generatedAt: generatedAt,
+      subject: subject,
+      sem: sem,
+      academicYear: academic_year
+    });
+
+    if (!codeExist) {
+      return res.status(400).json({ success: false, message: "Invalid code" });
+    }
+
+    // 3. Prepare the data for bulk insertion
+    const attendanceData = students.map(studentId => ({
+      studentId,
+      department,
+      subject: codeExist.subject,
+      teacherId: codeExist.teacherId,
+      code: codeExist.code,
+      academic_year: academic_year,
+      sem: sem,
+      timestamp: new Date(),
+      by: "M" // Assuming "A" stands for Admin/Automated bulk entry
+    }));
+
+    // 4. Bulk Insert into MongoDB
+    // { ordered: false } ensures that if one fails, the rest still proceed
+    await AttendanceRecord.insertMany(attendanceData, { ordered: false });
+
+    return res.status(200).json({ 
+      success: true, 
+      message: `Attendance marked successfully for ${students.length} students.` 
+    });
+
+  } catch (err) {
+    console.error("❌ Error submitting bulk attendance:", err);
+    
+    // Handle potential duplicate key errors if a student is already marked
+    if (err.code === 11000) {
+      return res.status(207).json({ 
+        success: true, 
+        message: "Attendance processed, but some duplicates were skipped." 
+      });
+    }
+
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
