@@ -204,20 +204,20 @@ exports.submitAttendance = async (req, res) => {
         teacherAp => teacherAp.BSSID === studentAp.BSSID
       )
     ).length;*/
-    console.log("📡 Teacher FP:", activeCode.wifiFingerprint);
-    console.log("📡 Student FP:", wifiFingerprint);
-    const teacherFingerprint = Array.isArray(activeCode.wifiFingerprint) ? activeCode.wifiFingerprint : [];
-    const studentFingerprint = Array.isArray(wifiFingerprint) ? wifiFingerprint : [];
-    const matches = studentFingerprint.filter(studentAp =>
-  teacherFingerprint.some(
-    teacherAp =>
-      teacherAp.BSSID === studentAp.BSSID &&
-      Math.abs(teacherAp.level - studentAp.level) <= 10
-  )
-);
+//     console.log("📡 Teacher FP:", activeCode.wifiFingerprint);
+//     console.log("📡 Student FP:", wifiFingerprint);
+//     const teacherFingerprint = Array.isArray(activeCode.wifiFingerprint) ? activeCode.wifiFingerprint : [];
+//     const studentFingerprint = Array.isArray(wifiFingerprint) ? wifiFingerprint : [];
+//     const matches = studentFingerprint.filter(studentAp =>
+//   teacherFingerprint.some(
+//     teacherAp =>
+//       teacherAp.BSSID === studentAp.BSSID &&
+//       Math.abs(teacherAp.level - studentAp.level) <= 10
+//   )
+// );
 
-    //const similarity = matchCount / activeCode.wifiFingerprint.length;
-    const similarity = matches.length / Math.max(teacherFingerprint.length, 1);
+//     //const similarity = matchCount / activeCode.wifiFingerprint.length;
+//     const similarity = matches.length / Math.max(teacherFingerprint.length, 1);
 
     // if (similarity < 0.5) { // threshold 50%
     //   return res.status(403).json({ success: false, message: "WiFi fingerprint mismatch" });
@@ -248,63 +248,69 @@ exports.submitAttendance = async (req, res) => {
 };
 
 exports.saveAttendance = async (req, res) => {
-  // Destructure the list of students and the shared session details
-  const { students,teacherId,department, generatedAt, subject,academic_year, sem } = req.body;
+  const { present_student, absent_student, teacherId, generatedAt } = req.body;
 
   // 1. Basic Validation
-  if (!Array.isArray(students) || students.length === 0 || !department || !academic_year || !sem || !teacherId || !generatedAt || !subject) {
-    return res.status(400).json({ success: false, message: "Missing required fields or empty student list" });
+  if (!Array.isArray(present_student) || !Array.isArray(absent_student) || !teacherId || !generatedAt) {
+    return res.status(400).json({ success: false, message: "Missing required fields" });
   }
 
   try {
-
-    // 2. Validate the Attendance Code once for the whole batch
+    // 2. Validate the Attendance Code
     const codeExist = await AttendanceCode.findOne({
       teacherId: teacherId,
-      department: department,
-      generatedAt: generatedAt,
-      subject: subject,
-      sem: sem,
-      academicYear: academic_year
+      generatedAt: generatedAt
     });
 
     if (!codeExist) {
-      return res.status(400).json({ success: false, message: "Invalid code" });
+      return res.status(400).json({ success: false, message: "Invalid session details" });
     }
 
-    // 3. Prepare the data for bulk insertion
-    const attendanceData = students.map(studentId => ({
-      studentId,
-      department,
-      subject: codeExist.subject,
-      teacherId: codeExist.teacherId,
-      code: codeExist.code,
-      academic_year: academic_year,
-      sem: sem,
-      timestamp: new Date(),
-      by: "M" // Assuming "A" stands for Admin/Automated bulk entry
-    }));
-
-    // 4. Bulk Insert into MongoDB
-    // { ordered: false } ensures that if one fails, the rest still proceed
-    await AttendanceRecord.insertMany(attendanceData, { ordered: false });
-
-    return res.status(200).json({ 
-      success: true, 
-      message: `Attendance marked successfully for ${students.length} students.` 
-    });
-
-  } catch (err) {
-    console.error("❌ Error submitting bulk attendance:", err);
-    
-    // Handle potential duplicate key errors if a student is already marked
-    if (err.code === 11000) {
-      return res.status(207).json({ 
-        success: true, 
-        message: "Attendance processed, but some duplicates were skipped." 
+    // --- STEP 3: REMOVE MISTAKENLY ADDED STUDENTS ---
+    if (absent_student.length > 0) {
+      await AttendanceRecord.deleteMany({
+        studentId: { $in: absent_student },
+        code: codeExist.code,
+        subject: codeExist.subject
       });
     }
 
+    // --- STEP 4: INSERT NEW PRESENT STUDENTS ---
+    let insertedCount = 0;
+    if (present_student.length > 0) {
+      const attendanceData = present_student.map(studentId => ({
+        studentId,
+        department: codeExist.department,
+        subject: codeExist.subject,
+        teacherId: codeExist.teacherId,
+        code: codeExist.code,
+        academic_year: codeExist.academicYear,
+        sem: codeExist.sem,
+        timestamp: new Date(),
+        by: "M" 
+      }));
+
+      // Use ordered: false so if some students were already saved, 
+      // the rest will still be inserted.
+      const result = await AttendanceRecord.insertMany(attendanceData, { ordered: false });
+      insertedCount = result.length;
+    }
+
+    return res.status(200).json({ 
+      success: true, 
+      message: `Updated successfully. Added: ${insertedCount}, Removed: ${absent_student.length}` 
+    });
+
+  } catch (err) {
+    // Handle Duplicate Key Errors (11000)
+    if (err.code === 11000) {
+      return res.status(207).json({ 
+        success: true, 
+        message: "Attendance updated (some duplicates skipped)." 
+      });
+    }
+
+    console.error("❌ Error updating attendance:", err);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
