@@ -8,7 +8,8 @@ const attendanceRecordSchema = new mongoose.Schema({
   code: { type: String, required: true },
   academic_year: { type: String, required: true },
   sem: { type: String, required: true },
-  timestamp: { type: Date, default: Date.now },
+  timestamp: {type: Date, required: true},
+  created_timestamp: { type: Date, default: Date.now },
 
   // ✅ Store student's location as GeoJSON Point
   wifiFingerprint: [

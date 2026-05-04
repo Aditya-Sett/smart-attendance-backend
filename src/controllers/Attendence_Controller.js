@@ -233,6 +233,7 @@ exports.submitAttendance = async (req, res) => {
       academic_year: academic_year,
       sem: sem,
       timestamp: new Date(),
+      created_timestamp: new Date(),
       wifiFingerprint: wifiFingerprint,
       by: "A"
     });
@@ -255,11 +256,29 @@ exports.saveAttendance = async (req, res) => {
     return res.status(400).json({ success: false, message: "Missing required fields" });
   }
 
+  console.log("teacherId: ",teacherId);
+  console.log("generatedAt:",generatedAt);
+  console.log("present_student: ",present_student);
+  console.log("absent_student: ",absent_student);
+
+  // Convert to Date object
+const targetDate  = new Date(generatedAt);
+
+// Create ±1 second range
+const start = new Date(targetDate.getTime());
+const end = new Date(targetDate.getTime() + 1000);
+
+console.log("start: ",start);
+console.log("end: ",end);
+
   try {
     // 2. Validate the Attendance Code
     const codeExist = await AttendanceCode.findOne({
       teacherId: teacherId,
-      generatedAt: generatedAt
+      generatedAt: {
+    $gte: start,
+    $lte: end
+  }
     });
 
     if (!codeExist) {
@@ -286,7 +305,8 @@ exports.saveAttendance = async (req, res) => {
         code: codeExist.code,
         academic_year: codeExist.academicYear,
         sem: codeExist.sem,
-        timestamp: new Date(),
+        timestamp: start,
+        created_timestamp: new Date(),
         by: "M" 
       }));
 
